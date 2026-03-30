@@ -21,7 +21,12 @@ async function startServer() {
 
   // API Endpoint to receive ERP error logs
   app.post('/api/debug', async (req, res) => {
-    const payload: ErrorPayload = req.body;
+    // Handle Supabase Webhook payload or direct ErrorPayload
+    const payload: ErrorPayload = req.body.record || req.body;
+
+    if (!payload.message) {
+      return res.status(400).json({ error: 'Invalid error payload: message is required' });
+    }
 
     try {
       // 1. Check Rule Engine first

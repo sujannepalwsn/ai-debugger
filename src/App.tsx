@@ -66,7 +66,7 @@ interface FixHistoryEntry {
 }
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'debug' | 'history'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'debug' | 'history' | 'setup'>('dashboard');
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
   const [history, setHistory] = useState<FixHistoryEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -80,6 +80,8 @@ export default function App() {
     user: { role: 'teacher', id: 'user_123', centerId: 'center_456' },
     severity: 'high'
   });
+
+  const webhookUrl = `${window.location.origin}/api/debug`;
 
   useEffect(() => {
     fetchChecklist();
@@ -157,6 +159,16 @@ export default function App() {
       >
         <History className="w-5 h-5" />
         <span className="font-medium">Fix History</span>
+      </button>
+      <button 
+        onClick={() => { setActiveTab('setup'); setIsMobileMenuOpen(false); }}
+        className={cn(
+          "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200",
+          activeTab === 'setup' ? "bg-white/5 text-blue-400" : "text-white/50 hover:bg-white/5 hover:text-white"
+        )}
+      >
+        <Info className="w-5 h-5" />
+        <span className="font-medium">Setup Guide</span>
       </button>
     </nav>
   );
@@ -443,6 +455,89 @@ export default function App() {
                     <p className="text-white/30">No history found yet.</p>
                   </div>
                 )}
+              </div>
+            </motion.div>
+          )}
+
+          {activeTab === 'setup' && (
+            <motion.div 
+              key="setup"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="space-y-8"
+            >
+              <header>
+                <h2 className="text-2xl lg:text-3xl font-bold mb-2">Supabase Webhook Setup</h2>
+                <p className="text-white/50 text-sm lg:text-base">Connect your School ERP to the AI Debugger via database webhooks.</p>
+              </header>
+
+              <div className="grid grid-cols-1 gap-6">
+                <div className="p-6 lg:p-8 bg-[#0F0F11] border border-white/5 rounded-3xl space-y-6">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2 bg-blue-600/20 rounded-lg">
+                      <Database className="w-6 h-6 text-blue-400" />
+                    </div>
+                    <h3 className="text-xl font-bold">1. Configure Webhook</h3>
+                  </div>
+                  
+                  <div className="space-y-4 text-sm lg:text-base text-white/70 leading-relaxed">
+                    <p>In your Supabase Dashboard, navigate to <strong>Database &gt; Webhooks</strong> and create a new webhook with these settings:</p>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                      <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
+                        <h4 className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1">Name</h4>
+                        <span className="text-sm font-mono text-blue-300">AI_Debugger_Sync</span>
+                      </div>
+                      <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
+                        <h4 className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1">Table</h4>
+                        <span className="text-sm font-mono text-blue-300">error_logs</span>
+                      </div>
+                      <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
+                        <h4 className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1">Events</h4>
+                        <span className="text-sm font-mono text-blue-300">INSERT</span>
+                      </div>
+                      <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
+                        <h4 className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1">Method</h4>
+                        <span className="text-sm font-mono text-blue-300">POST</span>
+                      </div>
+                    </div>
+
+                    <div className="p-4 bg-white/5 rounded-2xl border border-white/5 mt-4">
+                      <h4 className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-2">Webhook URL</h4>
+                      <div className="flex items-center gap-3">
+                        <code className="text-xs lg:text-sm font-mono text-blue-300 break-all bg-black/40 p-2 rounded-lg flex-1">
+                          {webhookUrl}
+                        </code>
+                        <button 
+                          onClick={() => navigator.clipboard.writeText(webhookUrl)}
+                          className="px-3 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-xs font-bold transition-all shrink-0"
+                        >
+                          Copy
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-6 lg:p-8 bg-[#0F0F11] border border-white/5 rounded-3xl space-y-6">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2 bg-blue-600/20 rounded-lg">
+                      <Shield className="w-6 h-6 text-blue-400" />
+                    </div>
+                    <h3 className="text-xl font-bold">2. Expected Payload</h3>
+                  </div>
+                  
+                  <div className="space-y-4 text-sm lg:text-base text-white/70 leading-relaxed">
+                    <p>Ensure your <code>error_logs</code> table has at least these columns to enable full AI analysis:</p>
+                    <ul className="list-disc list-inside space-y-2 ml-2 text-white/50">
+                      <li><code className="text-blue-300">errorType</code> (text) - e.g., "Supabase 400", "RLS Violation"</li>
+                      <li><code className="text-blue-300">message</code> (text) - The raw error message</li>
+                      <li><code className="text-blue-300">module</code> (text) - ERP module name (e.g., "Admissions")</li>
+                      <li><code className="text-blue-300">severity</code> (text) - "low", "medium", "high"</li>
+                    </ul>
+                  </div>
+                </div>
               </div>
             </motion.div>
           )}
