@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { io } from 'socket.io-client';
 import { 
   Bug, 
   History, 
@@ -17,11 +18,14 @@ import {
   GitPullRequest,
   Settings,
   X,
-  Book
+  Book,
+  RefreshCw,
+  Save
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { toast, Toaster } from 'sonner';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -81,12 +85,79 @@ export default function App() {
   const [githubToken, setGithubToken] = useState(() => localStorage.getItem('github_token') || '');
   const [githubOwner, setGithubOwner] = useState(() => localStorage.getItem('github_owner') || '');
   const [githubRepo, setGithubRepo] = useState(() => localStorage.getItem('github_repo') || '');
+  const [autoPr, setAutoPr] = useState(false);
+  const [supabaseUrl, setSupabaseUrl] = useState(() => localStorage.getItem('supabase_url') || '');
+  const [supabaseKey, setSupabaseKey] = useState(() => localStorage.getItem('supabase_key') || '');
+  const [supabaseTable, setSupabaseTable] = useState(() => localStorage.getItem('supabase_table') || 'error_logs');
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
   const [history, setHistory] = useState<FixHistoryEntry[]>([]);
   const [rules, setRules] = useState<any[]>([]);
+  const [serverConfig, setServerConfig] = useState({
+    hasGeminiKey: false,
+    hasGithubToken: false,
+    hasGithubOwner: false,
+    hasGithubRepo: false,
+    hasSupabaseUrl: false,
+    hasSupabaseKey: false
+  });
   const [loading, setLoading] = useState(false);
   const [debugResult, setDebugResult] = useState<DebugResult | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [realtimeEvents, setRealtimeEvents] = useState<any[]>([]);
+  const [isConnected, setIsConnected] = useState(false);
+
+  useEffect(() => {
+    const socket = io();
+
+    socket.on('connect', () => {
+      setIsConnected(true);
+      console.log('Socket connected');
+    });
+
+    socket.on('disconnect', () => {
+      setIsConnected(false);
+      console.log('Socket disconnected');
+    });
+
+    socket.on('error_received', (data: any) => {
+      toast.info(`New error received: ${data.message.substring(0, 50)}...`, {
+        description: `Type: ${data.errorType} | Severity: ${data.severity}`,
+        duration: 5000,
+      });
+      setRealtimeEvents(prev => [data, ...prev].slice(0, 10));
+    });
+
+    socket.on('analyzing_error', (data: any) => {
+      toast.loading(`AI is analyzing: ${data.message.substring(0, 50)}...`, {
+        id: 'analyzing',
+      });
+    });
+
+    socket.on('new_fix', (data: any) => {
+      toast.dismiss('analyzing');
+      toast.success(`Analysis complete for: ${data.message.substring(0, 50)}...`, {
+        description: `Root Cause: ${data.rootCause}`,
+        duration: 8000,
+      });
+      setHistory(prev => [data, ...prev]);
+      fetchChecklist();
+    });
+
+    socket.on('auto_pr_created', (data: any) => {
+      toast.success(data.message, {
+        description: `View PR: ${data.url}`,
+        duration: 10000,
+        action: {
+          label: 'View PR',
+          onClick: () => window.open(data.url, '_blank')
+        }
+      });
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, []);
   const [payload, setPayload] = useState<ErrorPayload>({
     errorType: 'Supabase 400',
     message: 'Could not find column "lesson_id" in table "activities"',
@@ -104,7 +175,69 @@ export default function App() {
     fetchChecklist();
     fetchHistory();
     fetchRules();
+    fetchServerConfig();
   }, []);
+
+  const fetchServerConfig = async () => {
+    try {
+      const res = await fetch('/api/config');
+      const data = await res.json();
+      setServerConfig(data);
+      if (data.autoPr !== undefined) {
+        setAutoPr(data.autoPr);
+      }
+      toast.success('Server configuration refreshed');
+    } catch (e) {
+      console.error('Failed to fetch server config');
+      toast.error('Failed to refresh server configuration');
+    }
+  };
+
+  const handleSaveToServer = async () => {
+    try {
+      const res = await fetch('/api/save-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          GEMINI_API_KEY: apiKey,
+          GITHUB_TOKEN: githubToken,
+          GITHUB_OWNER: githubOwner,
+          GITHUB_REPO: githubRepo,
+          SUPABASE_URL: supabaseUrl,
+          SUPABASE_SERVICE_ROLE_KEY: supabaseKey,
+          SUPABASE_ERROR_TABLE: supabaseTable,
+          AUTO_PR: autoPr
+        })
+      });
+      if (res.ok) {
+        toast.success('Configuration saved to server permanently');
+        fetchServerConfig();
+      } else {
+        throw new Error('Failed to save to server');
+      }
+    } catch (e) {
+      toast.error('Failed to save configuration to server');
+    }
+  };
+
+  const handleSyncSupabase = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch('/api/sync-supabase', {
+        method: 'POST',
+      });
+      const data = await response.json();
+      if (data.status === 'success') {
+        toast.success(`Synced ${data.count} errors from Supabase`);
+      } else {
+        toast.error(data.error || 'Failed to sync Supabase');
+      }
+    } catch (e) {
+      toast.error('Network error while syncing Supabase');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const fetchRules = async () => {
     try {
@@ -132,13 +265,33 @@ export default function App() {
     localStorage.setItem('github_repo', githubRepo);
   }, [githubRepo]);
 
+  useEffect(() => {
+    localStorage.setItem('supabase_url', supabaseUrl);
+  }, [supabaseUrl]);
+
+  useEffect(() => {
+    localStorage.setItem('supabase_key', supabaseKey);
+  }, [supabaseKey]);
+
+  useEffect(() => {
+    localStorage.setItem('supabase_table', supabaseTable);
+  }, [supabaseTable]);
+
   const fetchChecklist = async () => {
     try {
       const res = await fetch('/api/checklist');
+      if (!res.ok) {
+        throw new Error(`Server returned ${res.status}`);
+      }
       const data = await res.json();
-      setChecklist(data.modules || []);
+      if (data && data.modules && Array.isArray(data.modules)) {
+        setChecklist(data.modules);
+      } else {
+        console.warn('Checklist data format unexpected:', data);
+        setChecklist([]);
+      }
     } catch (e) {
-      console.error('Failed to fetch checklist');
+      console.error('Failed to fetch checklist:', e);
     }
   };
 
@@ -416,6 +569,30 @@ export default function App() {
         "lg:ml-64"
       )}>
         <AnimatePresence mode="wait">
+          {/* Setup Required Overlay */}
+          {!serverConfig.hasGeminiKey && !apiKey && activeTab !== 'settings' && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm lg:ml-64">
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="max-w-md w-full bg-[#1A1A1E] border border-white/10 rounded-3xl p-8 text-center shadow-2xl"
+              >
+                <div className="w-16 h-16 bg-blue-600/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                  <Shield className="w-8 h-8 text-blue-400" />
+                </div>
+                <h3 className="text-2xl font-bold mb-3 text-white">Setup Required</h3>
+                <p className="text-white/50 mb-8 leading-relaxed">
+                  To start debugging, you need to configure your Gemini API Key. This enables the AI to analyze your error logs and suggest fixes.
+                </p>
+                <button 
+                  onClick={() => setActiveTab('settings')}
+                  className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-bold transition-all shadow-lg shadow-blue-600/20"
+                >
+                  Go to Settings
+                </button>
+              </motion.div>
+            </div>
+          )}
           {activeTab === 'dashboard' && (
             <motion.div 
               key="dashboard"
@@ -424,40 +601,148 @@ export default function App() {
               exit={{ opacity: 0, y: -20 }}
               className="space-y-8"
             >
-              <header>
-                <h2 className="text-2xl lg:text-3xl font-bold mb-2">ERP Module Coverage</h2>
-                <p className="text-white/50 text-sm lg:text-base">Tracking debugging readiness across school management modules.</p>
+              <header className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl lg:text-3xl font-bold mb-2">ERP Module Coverage</h2>
+                  <p className="text-white/50 text-sm lg:text-base">Tracking debugging readiness across school management modules.</p>
+                </div>
+                <div className="flex items-center gap-4">
+                  <button 
+                    onClick={handleSyncSupabase}
+                    disabled={loading}
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 border border-blue-500/20 rounded-xl text-xs font-bold uppercase tracking-widest transition-all disabled:opacity-50"
+                  >
+                    {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                    Sync Supabase
+                  </button>
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-white/5 rounded-full border border-white/10">
+                    <div className={cn(
+                      "w-2 h-2 rounded-full animate-pulse",
+                      isConnected ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]" : "bg-red-500"
+                    )} />
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-white/60">
+                      {isConnected ? "Live Stream: Active" : "Live Stream: Offline"}
+                    </span>
+                  </div>
+                </div>
               </header>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
-                {checklist.map((item, idx) => (
-                  <div key={idx} className="p-5 lg:p-6 bg-[#0F0F11] border border-white/5 rounded-2xl hover:border-blue-500/30 transition-colors group">
-                    <div className="flex justify-between items-start mb-4">
-                      <h3 className="font-semibold text-white/90 group-hover:text-white text-sm lg:text-base">{item.name}</h3>
-                      <span className={cn(
-                        "px-2 py-1 rounded-md text-[9px] lg:text-[10px] font-bold uppercase tracking-wider",
-                        item.status === 'Ready' ? "bg-green-500/10 text-green-400" : "bg-yellow-500/10 text-yellow-400"
-                      )}>
-                        {item.status}
-                      </span>
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {checklist.map((item, idx) => (
+                    <div key={idx} className="p-5 bg-[#0F0F11] border border-white/5 rounded-2xl hover:border-blue-500/30 transition-colors group">
+                      <div className="flex justify-between items-start mb-4">
+                        <h3 className="font-semibold text-white/90 group-hover:text-white text-sm">{item.name}</h3>
+                        <span className={cn(
+                          "px-2 py-1 rounded-md text-[9px] font-bold uppercase tracking-wider",
+                          item.status === 'Ready' ? "bg-green-500/10 text-green-400" : "bg-yellow-500/10 text-yellow-400"
+                        )}>
+                          {item.status}
+                        </span>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-[10px] text-white/40">
+                          <span>Coverage</span>
+                          <span>{item.coverage}</span>
+                        </div>
+                        <div className="h-1 bg-white/5 rounded-full overflow-hidden">
+                          <div 
+                            className={cn(
+                              "h-full rounded-full transition-all duration-1000",
+                              item.coverage === 'High' ? "w-full bg-blue-500" : 
+                              item.coverage === 'Medium' ? "w-2/3 bg-blue-500/60" : "w-1/3 bg-blue-500/30"
+                            )}
+                          />
+                        </div>
+                      </div>
                     </div>
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-[10px] lg:text-xs text-white/40">
-                        <span>Coverage</span>
-                        <span>{item.coverage}</span>
+                  ))}
+                </div>
+
+                <div className="space-y-6">
+                  <div className="p-6 bg-[#0F0F11] border border-white/5 rounded-2xl flex flex-col h-full">
+                    <div className="flex items-center justify-between mb-6">
+                      <div className="flex items-center gap-2">
+                        <Terminal className="w-4 h-4 text-blue-400" />
+                        <h3 className="font-bold text-sm uppercase tracking-widest">Live Error Feed</h3>
                       </div>
-                      <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
-                        <div 
-                          className={cn(
-                            "h-full rounded-full transition-all duration-1000",
-                            item.coverage === 'High' ? "w-full bg-blue-500" : 
-                            item.coverage === 'Medium' ? "w-2/3 bg-blue-500/60" : "w-1/3 bg-blue-500/30"
-                          )}
-                        />
-                      </div>
+                      <span className="text-[9px] font-bold text-white/30 uppercase tracking-widest">Last 10 Events</span>
+                    </div>
+
+                    <div className="flex-1 space-y-3 overflow-y-auto max-h-[300px] pr-2 scrollbar-thin scrollbar-thumb-white/10">
+                      {realtimeEvents.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-10 text-center opacity-30">
+                          <Loader2 className="w-8 h-8 mb-2 animate-spin" />
+                          <p className="text-[10px] uppercase tracking-widest font-bold">Waiting for errors...</p>
+                        </div>
+                      ) : (
+                        realtimeEvents.map((event, idx) => (
+                          <motion.div 
+                            initial={{ opacity: 0, x: 20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            key={idx} 
+                            className="p-3 bg-white/5 border border-white/5 rounded-xl space-y-1"
+                          >
+                            <div className="flex justify-between items-center">
+                              <span className="text-[9px] font-bold text-blue-400 uppercase tracking-widest">{event.errorType}</span>
+                              <span className="text-[8px] text-white/30 font-mono">{new Date(event.timestamp).toLocaleTimeString()}</span>
+                            </div>
+                            <p className="text-[11px] text-white/70 line-clamp-2 font-mono leading-relaxed">{event.message}</p>
+                            <div className="flex items-center gap-2 pt-1">
+                              <span className={cn(
+                                "text-[8px] px-1.5 py-0.5 rounded uppercase font-bold",
+                                event.severity === 'high' ? "bg-red-500/20 text-red-400" : "bg-yellow-500/20 text-yellow-400"
+                              )}>
+                                {event.severity}
+                              </span>
+                              <span className="text-[8px] text-white/40 uppercase tracking-tight">{event.moduleName}</span>
+                            </div>
+                          </motion.div>
+                        ))
+                      )}
                     </div>
                   </div>
-                ))}
+
+                  <div className="p-6 bg-blue-500/5 border border-blue-500/10 rounded-2xl space-y-4">
+                    <div className="flex items-center gap-2">
+                      <Code className="w-4 h-4 text-blue-400" />
+                      <h3 className="font-bold text-sm uppercase tracking-widest text-blue-400">Integration Guide</h3>
+                    </div>
+                    <p className="text-[10px] text-white/50 leading-relaxed">
+                      Connect your ERP system to this debugger by sending POST requests to the endpoint below.
+                    </p>
+                    <div className="space-y-2">
+                      <label className="text-[9px] font-bold text-white/30 uppercase tracking-widest">Webhook URL</label>
+                      <div className="flex gap-2">
+                        <input 
+                          readOnly
+                          value={`${window.location.origin}/api/debug`}
+                          className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-[10px] font-mono text-white/60 outline-none"
+                        />
+                        <button 
+                          onClick={() => {
+                            navigator.clipboard.writeText(`${window.location.origin}/api/debug`);
+                            toast.success('Webhook URL copied to clipboard');
+                          }}
+                          className="px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-[10px] font-bold uppercase transition-all"
+                        >
+                          Copy
+                        </button>
+                      </div>
+                    </div>
+                    <div className="pt-2">
+                      <p className="text-[9px] text-white/30 uppercase tracking-widest font-bold mb-1">Payload Example</p>
+                      <pre className="p-2 bg-black/40 rounded-lg text-[8px] font-mono text-white/40 overflow-x-auto">
+{`{
+  "errorType": "Supabase 400",
+  "message": "Column 'id' not found",
+  "moduleName": "Admissions",
+  "severity": "high"
+}`}
+                      </pre>
+                    </div>
+                  </div>
+                </div>
               </div>
             </motion.div>
           )}
@@ -587,7 +872,7 @@ export default function App() {
                       <div className="pt-4 border-t border-white/5">
                         <button 
                           onClick={handleCreatePR}
-                          disabled={prLoading || !githubToken || !githubOwner || !githubRepo}
+                          disabled={prLoading || (!githubToken && !serverConfig.hasGithubToken) || (!githubOwner && !serverConfig.hasGithubOwner) || (!githubRepo && !serverConfig.hasGithubRepo)}
                           className="w-full bg-white/5 hover:bg-white/10 disabled:opacity-50 text-white font-bold py-3 rounded-xl transition-all flex items-center justify-center gap-2 border border-white/10"
                         >
                           {prLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <GitPullRequest className="w-4 h-4" />}
@@ -603,11 +888,11 @@ export default function App() {
                             View Pull Request on GitHub
                           </a>
                         )}
-                        {(!githubToken || !githubOwner || !githubRepo) && (
+                        {(!githubToken && !serverConfig.hasGithubToken) || (!githubOwner && !serverConfig.hasGithubOwner) || (!githubRepo && !serverConfig.hasGithubRepo) ? (
                           <p className="text-[9px] text-yellow-500/70 text-center mt-2">
                             Configure GitHub settings to enable PR creation.
                           </p>
-                        )}
+                        ) : null}
                       </div>
                     )}
 
@@ -881,10 +1166,28 @@ export default function App() {
               exit={{ opacity: 0, y: -20 }}
               className="space-y-8"
             >
-              <header>
-                <h2 className="text-2xl lg:text-3xl font-bold mb-2">Application Settings</h2>
-                <p className="text-white/50 text-sm lg:text-base">Configure your AI Debugger environment.</p>
+              <header className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl lg:text-3xl font-bold mb-2">Application Settings</h2>
+                  <p className="text-white/50 text-sm lg:text-base">Configure your AI Debugger environment.</p>
+                </div>
+                <button 
+                  onClick={fetchServerConfig}
+                  className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all"
+                >
+                  <RefreshCw className="w-3 h-3" /> Refresh Config
+                </button>
               </header>
+
+              <div className="p-4 bg-blue-500/5 border border-blue-500/10 rounded-2xl flex items-start gap-3">
+                <Info className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
+                <div className="text-[11px] text-white/60 leading-relaxed">
+                  <p className="font-bold text-blue-400 mb-1 uppercase tracking-wider">Configuration Guide</p>
+                  <p><b className="text-green-400">System Configured:</b> Set via environment variables (AI Studio Settings). Permanent and global.</p>
+                  <p className="mt-1"><b className="text-blue-400">Browser Configured:</b> Stored in your local browser. Overrides system settings for you only.</p>
+                  <p className="mt-1"><b className="text-white">Save to Server:</b> Use the button below to persist your browser settings to the server's permanent storage.</p>
+                </div>
+              </div>
 
               <div className="p-6 lg:p-8 bg-[#0F0F11] border border-white/5 rounded-3xl space-y-6">
                 <div className="flex items-center gap-3 mb-4">
@@ -898,12 +1201,16 @@ export default function App() {
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest flex justify-between">
                       <span>Gemini API Key</span>
-                      {apiKey ? (
-                        <span className="text-green-400 flex items-center gap-1">
-                          <CheckCircle2 className="w-3 h-3" /> Configured
+                      {serverConfig.hasGeminiKey ? (
+                        <span className="text-green-400 flex items-center gap-1 font-bold uppercase tracking-widest text-[9px] bg-green-400/10 px-2 py-0.5 rounded-full">
+                          <CheckCircle2 className="w-3 h-3" /> System Configured
+                        </span>
+                      ) : apiKey ? (
+                        <span className="text-blue-400 flex items-center gap-1 font-bold uppercase tracking-widest text-[9px] bg-blue-400/10 px-2 py-0.5 rounded-full">
+                          <CheckCircle2 className="w-3 h-3" /> Browser Configured
                         </span>
                       ) : (
-                        <span className="text-yellow-400 flex items-center gap-1">
+                        <span className="text-yellow-400 flex items-center gap-1 font-bold uppercase tracking-widest text-[9px] bg-yellow-400/10 px-2 py-0.5 rounded-full">
                           <AlertCircle className="w-3 h-3" /> Required
                         </span>
                       )}
@@ -913,12 +1220,70 @@ export default function App() {
                       value={apiKey}
                       onChange={(e) => setApiKey(e.target.value)}
                       className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-blue-500/50 outline-none transition-all font-mono"
-                      placeholder="Enter your Gemini API key..."
+                      placeholder={serverConfig.hasGeminiKey ? "Using system-wide key..." : "Paste your Gemini API key here (e.g., AIza...)"}
                     />
                     <p className="text-[10px] text-white/30 leading-relaxed">
-                      This key is stored locally in your browser and used to authenticate requests to the Gemini AI. 
-                      You can get a key from the <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">Google AI Studio</a>.
+                      {serverConfig.hasGeminiKey 
+                        ? "A system-wide API key is configured on the server. You can override it here if needed."
+                        : "This key is stored locally in your browser. For a permanent setup, set the GEMINI_API_KEY environment variable."}
                     </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-6 lg:p-8 bg-[#0F0F11] border border-white/5 rounded-3xl space-y-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="p-2 bg-blue-600/20 rounded-lg">
+                    <Database className="w-6 h-6 text-blue-400" />
+                  </div>
+                  <h3 className="text-xl font-bold">Supabase Integration</h3>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest flex justify-between">
+                      <span>Supabase Project URL</span>
+                      {serverConfig.hasSupabaseUrl ? (
+                        <span className="text-green-400 font-bold uppercase tracking-widest text-[9px] bg-green-400/10 px-2 py-0.5 rounded-full">System Configured</span>
+                      ) : supabaseUrl ? (
+                        <span className="text-blue-400 font-bold uppercase tracking-widest text-[9px] bg-blue-400/10 px-2 py-0.5 rounded-full">Browser Configured</span>
+                      ) : null}
+                    </label>
+                    <input 
+                      value={supabaseUrl}
+                      onChange={(e) => setSupabaseUrl(e.target.value)}
+                      className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-blue-500/50 outline-none transition-all font-mono"
+                      placeholder="https://your-project.supabase.co"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest flex justify-between">
+                        <span>Service Role Key (Secret)</span>
+                        {serverConfig.hasSupabaseKey ? (
+                          <span className="text-green-400 font-bold uppercase tracking-widest text-[9px] bg-green-400/10 px-2 py-0.5 rounded-full">System Configured</span>
+                        ) : supabaseKey ? (
+                          <span className="text-blue-400 font-bold uppercase tracking-widest text-[9px] bg-blue-400/10 px-2 py-0.5 rounded-full">Browser Configured</span>
+                        ) : null}
+                      </label>
+                      <input 
+                        type="password"
+                        value={supabaseKey}
+                        onChange={(e) => setSupabaseKey(e.target.value)}
+                        className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-blue-500/50 outline-none transition-all font-mono"
+                        placeholder="eyJhbGciOiJIUzI1..."
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Error Table Name</label>
+                      <input 
+                        value={supabaseTable}
+                        onChange={(e) => setSupabaseTable(e.target.value)}
+                        className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-blue-500/50 outline-none transition-all font-mono"
+                        placeholder="error_logs"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -933,43 +1298,90 @@ export default function App() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Repository Owner</label>
+                    <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest flex justify-between">
+                      <span>Repository Owner</span>
+                      {serverConfig.hasGithubOwner ? (
+                        <span className="text-green-400 font-bold uppercase tracking-widest text-[9px] bg-green-400/10 px-2 py-0.5 rounded-full">System Configured</span>
+                      ) : githubOwner ? (
+                        <span className="text-blue-400 font-bold uppercase tracking-widest text-[9px] bg-blue-400/10 px-2 py-0.5 rounded-full">Browser Configured</span>
+                      ) : null}
+                    </label>
                     <input 
                       value={githubOwner}
                       onChange={(e) => setGithubOwner(e.target.value)}
                       className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-blue-500/50 outline-none transition-all"
-                      placeholder="e.g., octocat"
+                      placeholder={serverConfig.hasGithubOwner ? "Using system owner..." : "e.g., octocat"}
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Repository Name</label>
+                    <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest flex justify-between">
+                      <span>Repository Name</span>
+                      {serverConfig.hasGithubRepo ? (
+                        <span className="text-green-400 font-bold uppercase tracking-widest text-[9px] bg-green-400/10 px-2 py-0.5 rounded-full">System Configured</span>
+                      ) : githubRepo ? (
+                        <span className="text-blue-400 font-bold uppercase tracking-widest text-[9px] bg-blue-400/10 px-2 py-0.5 rounded-full">Browser Configured</span>
+                      ) : null}
+                    </label>
                     <input 
                       value={githubRepo}
                       onChange={(e) => setGithubRepo(e.target.value)}
                       className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-blue-500/50 outline-none transition-all"
-                      placeholder="e.g., my-erp-app"
+                      placeholder={serverConfig.hasGithubRepo ? "Using system repo..." : "e.g., my-erp-app"}
                     />
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Personal Access Token</label>
-                  <input 
-                    type="password"
-                    value={githubToken}
-                    onChange={(e) => setGithubToken(e.target.value)}
-                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-blue-500/50 outline-none transition-all font-mono"
-                    placeholder="ghp_xxxxxxxxxxxx"
-                  />
-                  <p className="text-[10px] text-white/30 leading-relaxed">
-                    Requires <code>repo</code> scope to create branches and pull requests.
-                  </p>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest flex justify-between">
+                      <span>Personal Access Token</span>
+                      {serverConfig.hasGithubToken ? (
+                        <span className="text-green-400 font-bold uppercase tracking-widest text-[9px] bg-green-400/10 px-2 py-0.5 rounded-full">System Configured</span>
+                      ) : githubToken ? (
+                        <span className="text-blue-400 font-bold uppercase tracking-widest text-[9px] bg-blue-400/10 px-2 py-0.5 rounded-full">Browser Configured</span>
+                      ) : null}
+                    </label>
+                    <input 
+                      type="password"
+                      value={githubToken}
+                      onChange={(e) => setGithubToken(e.target.value)}
+                      className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-blue-500/50 outline-none transition-all font-mono"
+                      placeholder={serverConfig.hasGithubToken ? "Using system token..." : "ghp_xxxxxxxxxxxx"}
+                    />
+                    <p className="text-[10px] text-white/30 leading-relaxed space-y-1">
+                      <span className="block">• <b>Classic Token:</b> Requires <code>repo</code> scope.</span>
+                      <span className="block">• <b>Fine-grained Token:</b> Requires <b>Read & Write</b> access to <code>Contents</code> and <code>Pull requests</code>.</span>
+                    </p>
+                  </div>
+
+                  <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
+                    <div className="space-y-1">
+                      <h4 className="text-sm font-bold">Autonomous PR Creation</h4>
+                      <p className="text-[10px] text-white/40">Automatically create GitHub PRs for high-confidence fixes.</p>
+                    </div>
+                    <button 
+                      onClick={() => setAutoPr(!autoPr)}
+                      className={`w-12 h-6 rounded-full transition-all relative ${autoPr ? 'bg-blue-600' : 'bg-white/10'}`}
+                    >
+                      <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${autoPr ? 'left-7' : 'left-1'}`} />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="pt-4 flex justify-end">
+                  <button
+                    onClick={handleSaveToServer}
+                    className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold uppercase tracking-widest transition-all shadow-lg shadow-blue-600/20 active:scale-95"
+                  >
+                    <Save className="w-4 h-4" /> Save to Server (Permanent)
+                  </button>
                 </div>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
       </main>
+      <Toaster position="top-right" theme="dark" />
     </div>
   );
 }
