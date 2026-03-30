@@ -1,0 +1,16 @@
+{
+  "tables": {
+    "lesson_plans": {
+      "description": "Stores lesson plans for teachers.",
+      "roles": ["teacher", "admin", "super_admin"]
+    },
+    "activities": {
+      "description": "Stores school activities and events.",
+      "roles": ["teacher", "admin", "super_admin", "student", "parent"]
+    },
+    "notifications": {
+      "description": "Stores system and user notifications.",
+      "roles": ["all"]
+    }
+  }
+}

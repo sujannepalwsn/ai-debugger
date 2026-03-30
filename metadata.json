@@ -1,0 +1,5 @@
+{
+  "name": "Autonomous AI ERP Debugger",
+  "description": "A fully autonomous AI Debugger for Supabase-based school management platforms, featuring a rule engine, memory system, and Gemini-powered root cause analysis.",
+  "requestFramePermissions": []
+}

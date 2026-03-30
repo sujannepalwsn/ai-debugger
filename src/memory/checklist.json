@@ -1,0 +1,10 @@
+{
+  "modules": [
+    { "name": "Lesson Plans", "status": "Ready", "coverage": "High" },
+    { "name": "Activities", "status": "Ready", "coverage": "High" },
+    { "name": "Notifications", "status": "Ready", "coverage": "Medium" },
+    { "name": "Meetings", "status": "Pending", "coverage": "Low" },
+    { "name": "Reports", "status": "Pending", "coverage": "Low" },
+    { "name": "Discipline", "status": "Pending", "coverage": "Low" }
+  ]
+}

@@ -1,0 +1,17 @@
+[
+  {
+    "pattern": "Supabase 400",
+    "fix": "Check query syntax, column names, and data types. Ensure all required fields are present in the query.",
+    "fixType": "query"
+  },
+  {
+    "pattern": "RLS error",
+    "fix": "Verify Row Level Security policies. Ensure the user role has the necessary permissions (SELECT, INSERT, UPDATE, DELETE) for the target table.",
+    "fixType": "rls"
+  },
+  {
+    "pattern": "Join error",
+    "fix": "Check foreign key relationships. Ensure the join columns exist and are correctly referenced in the query.",
+    "fixType": "query"
+  }
+]
