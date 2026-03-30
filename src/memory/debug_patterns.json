@@ -13,5 +13,40 @@
     "pattern": "Join error",
     "fix": "Check foreign key relationships. Ensure the join columns exist and are correctly referenced in the query.",
     "fixType": "query"
+  },
+  {
+    "pattern": "JWT expired",
+    "fix": "The user session has expired. Redirect to login page or refresh the auth token.",
+    "fixType": "auth"
+  },
+  {
+    "pattern": "duplicate key value",
+    "fix": "A record with this unique identifier already exists. Check if you are trying to insert a duplicate entry.",
+    "fixType": "database"
+  },
+  {
+    "pattern": "null value in column",
+    "fix": "A required field is missing. Ensure all NOT NULL columns are populated in your request.",
+    "fixType": "database"
+  },
+  {
+    "pattern": "permission denied for table",
+    "fix": "The database user does not have access to this table. Check Supabase RLS policies or database roles.",
+    "fixType": "rls"
+  },
+  {
+    "pattern": "invalid input syntax for type uuid",
+    "fix": "The provided ID is not a valid UUID. Check your frontend code to ensure IDs are correctly formatted before sending.",
+    "fixType": "code"
+  },
+  {
+    "pattern": "violates foreign key constraint",
+    "fix": "You are trying to reference a record that does not exist or delete a record that is still being referenced. Check your data integrity.",
+    "fixType": "database"
+  },
+  {
+    "pattern": "column does not exist",
+    "fix": "The query references a column that is not in the table. Check for typos or recent schema changes.",
+    "fixType": "database"
   }
 ]

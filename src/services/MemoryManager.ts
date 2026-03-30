@@ -2,7 +2,7 @@ import fs from 'fs-extra';
 import path from 'path';
 
 export interface FixHistoryEntry {
-  errorType: string;
+  error_type: string;
   message: string;
   rootCause: string;
   fixType: string;
@@ -38,6 +38,12 @@ export class MemoryManager {
 
   async getDebugPatterns(): Promise<DebugPattern[]> {
     return fs.readJson(this.debugPatternsPath);
+  }
+
+  async addDebugPattern(pattern: DebugPattern): Promise<void> {
+    const patterns = await this.getDebugPatterns();
+    patterns.push(pattern);
+    await fs.writeJson(this.debugPatternsPath, patterns, { spaces: 2 });
   }
 
   async getSchemaKnowledge(): Promise<SchemaKnowledge> {

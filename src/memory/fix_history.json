@@ -1,1 +1,38 @@
-[]
+[
+  {
+    "error_type": "Supabase 400",
+    "message": "Could not find column \"lesson_id\" in table \"activities\"",
+    "rootCause": "GEMINI_API_KEY is not configured. Please set a valid API key in the Secrets panel.",
+    "fixType": "Code",
+    "fix": "Check GEMINI_API_KEY configuration or retry analysis.",
+    "codeChanges": "",
+    "timestamp": "2026-03-30T14:44:29.698Z"
+  },
+  {
+    "error_type": "Supabase 400",
+    "message": "Could not find column \"lesson_id\" in table \"activities\"",
+    "rootCause": "GEMINI_API_KEY is not configured. Please set a valid API key in the Secrets panel.",
+    "fixType": "Code",
+    "fix": "Check GEMINI_API_KEY configuration or retry analysis.",
+    "codeChanges": "",
+    "timestamp": "2026-03-30T14:48:13.088Z"
+  },
+  {
+    "error_type": "Supabase 400",
+    "message": "Could not find column \"lesson_id\" in table \"activities\"",
+    "rootCause": "{\"error\":{\"code\":400,\"message\":\"API key not valid. Please pass a valid API key.\",\"status\":\"INVALID_ARGUMENT\",\"details\":[{\"@type\":\"type.googleapis.com/google.rpc.ErrorInfo\",\"reason\":\"API_KEY_INVALID\",\"domain\":\"googleapis.com\",\"metadata\":{\"service\":\"generativelanguage.googleapis.com\"}},{\"@type\":\"type.googleapis.com/google.rpc.LocalizedMessage\",\"locale\":\"en-US\",\"message\":\"API key not valid. Please pass a valid API key.\"}]}}",
+    "fixType": "Code",
+    "fix": "Check GEMINI_API_KEY configuration or retry analysis.",
+    "codeChanges": "",
+    "timestamp": "2026-03-30T14:50:49.206Z"
+  },
+  {
+    "error_type": "Supabase 400",
+    "message": "Autonomous Webhook Test: Could not find column 'test_id' in table 'test_table'",
+    "rootCause": "GEMINI_API_KEY is not configured. Please set it in the Settings tab or the environment.",
+    "fixType": "Code",
+    "fix": "Check GEMINI_API_KEY configuration or retry analysis.",
+    "codeChanges": "",
+    "timestamp": "2026-03-30T14:57:38.148Z"
+  }
+]

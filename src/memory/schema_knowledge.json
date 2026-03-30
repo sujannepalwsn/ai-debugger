@@ -11,6 +11,18 @@
     "notifications": {
       "description": "Stores system and user notifications.",
       "roles": ["all"]
+    },
+    "meetings": {
+      "description": "Stores parent-teacher meetings and staff meetings.",
+      "roles": ["teacher", "admin", "parent"]
+    },
+    "attendance": {
+      "description": "Stores student daily attendance records.",
+      "roles": ["teacher", "admin"]
+    },
+    "grades": {
+      "description": "Stores student academic performance and grades.",
+      "roles": ["teacher", "admin", "student", "parent"]
     }
   }
 }
