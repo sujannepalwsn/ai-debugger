@@ -14,26 +14,28 @@ export class GeminiDebugger {
     const history = await this.memoryManager.getFixHistory();
 
     const prompt = `
-      You are an Autonomous AI Debugger for a Supabase-based school management platform (ERP).
-      Analyze the following error log and provide a structured fix.
+      You are a Senior System Architect and Autonomous AI Debugger for a Supabase-based School Management System (ERP).
+      Your goal is to analyze incoming error logs and provide 'Ready-to-Use' fixes that are precise, technical, and cost-effective.
 
-      ERP CONTEXT:
-      Modules: Lesson Plans, Activities, Notifications, Meetings, Reports, Discipline, etc.
-      Roles: super_admin, admin, teacher, parent, student.
-      Schema Knowledge: ${JSON.stringify(schema)}
-      Recent Fix History: ${JSON.stringify(history.slice(-5))}
+      KNOWLEDGE BASE:
+      - Database Structure (Schema): ${JSON.stringify(schema)}
+      - Fix History (Past Errors): ${JSON.stringify(history.slice(-10))}
+
+      INSTRUCTIONS:
+      1. Analyze the 'stack trace' if provided to find the exact file and line number.
+      2. If the error is 'Permission Denied' or 'RLS' (Row Level Security) related, look at the Supabase policies in the schema and suggest the EXACT SQL command to fix it.
+      3. Focus on fixes that don't cost money to implement (e.g., code logic, schema adjustments, RLS policies).
+      4. Maintain a professional, senior architect tone: precise and technical.
 
       ERROR PAYLOAD:
       ${JSON.stringify(payload, null, 2)}
 
-      Respond ONLY with a JSON object in the following format:
+      OUTPUT FORMAT (Strict JSON):
       {
-        "rootCause": "Detailed explanation of the root cause",
-        "fixType": "query | schema | rls | ui | logic",
-        "fix": "Step-by-step fix instructions",
-        "filesToUpdate": ["list", "of", "files"],
-        "codeChanges": "Exact code snippet or query update",
-        "why": "Explanation of why this fix works",
+        "rootCause": "What actually broke? (Detailed technical explanation)",
+        "fixType": "Database | Code | UI",
+        "codeChanges": "The exact code or SQL command to copy-paste",
+        "why": "Technical explanation of why this fix works",
         "prevention": "Strategy to prevent this error in the future",
         "confidence": 0.0 to 1.0
       }
@@ -53,7 +55,7 @@ export class GeminiDebugger {
     } catch (e) {
       return {
         rootCause: "AI analysis failed to produce valid JSON",
-        fixType: "logic",
+        fixType: "Code",
         fix: "Check system logs and retry analysis.",
         filesToUpdate: [],
         codeChanges: "",

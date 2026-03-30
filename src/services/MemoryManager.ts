@@ -43,4 +43,13 @@ export class MemoryManager {
   async getSchemaKnowledge(): Promise<SchemaKnowledge> {
     return fs.readJson(this.schemaKnowledgePath);
   }
+
+  async updateSchemaKnowledge(knowledge: SchemaKnowledge): Promise<void> {
+    await fs.writeJson(this.schemaKnowledgePath, knowledge, { spaces: 2 });
+  }
+
+  async updateChecklist(modules: any[]): Promise<void> {
+    const checklistPath = path.join(process.cwd(), 'src/memory/checklist.json');
+    await fs.writeJson(checklistPath, { modules }, { spaces: 2 });
+  }
 }

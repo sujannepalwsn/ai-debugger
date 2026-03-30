@@ -1,10 +1,10 @@
 {
   "modules": [
-    { "name": "Lesson Plans", "status": "Ready", "coverage": "High" },
-    { "name": "Activities", "status": "Ready", "coverage": "High" },
-    { "name": "Notifications", "status": "Ready", "coverage": "Medium" },
-    { "name": "Meetings", "status": "Pending", "coverage": "Low" },
-    { "name": "Reports", "status": "Pending", "coverage": "Low" },
-    { "name": "Discipline", "status": "Pending", "coverage": "Low" }
+    { "name": "Rule Engine Pattern Matching", "status": "Ready", "coverage": "High" },
+    { "name": "Stack Trace Analysis", "status": "Ready", "coverage": "High" },
+    { "name": "RLS/SQL Fix Generation", "status": "Ready", "coverage": "High" },
+    { "name": "JSON Output Formatting", "status": "Ready", "coverage": "High" },
+    { "name": "Senior Architect Tone", "status": "Ready", "coverage": "High" },
+    { "name": "Cost-Effective Fix Prioritization", "status": "Ready", "coverage": "High" }
   ]
 }

@@ -16,9 +16,9 @@ export interface ErrorPayload {
 
 export interface DebugResult {
   rootCause: string;
-  fixType: 'query' | 'schema' | 'rls' | 'ui' | 'logic';
-  fix: string;
-  filesToUpdate: string[];
+  fixType: 'Database' | 'Code' | 'UI';
+  fix?: string;
+  filesToUpdate?: string[];
   codeChanges: string;
   why: string;
   prevention: string;
@@ -34,12 +34,15 @@ export class RuleEngine {
 
     for (const pattern of patterns) {
       if (message.includes(pattern.pattern.toLowerCase())) {
+        // Map old fix types to new ones if necessary
+        let fixType: 'Database' | 'Code' | 'UI' = 'Code';
+        if (pattern.fixType === 'rls' || pattern.fixType === 'query') fixType = 'Database';
+        if (pattern.fixType === 'ui') fixType = 'UI';
+
         return {
           rootCause: `Matched known pattern: ${pattern.pattern}`,
-          fixType: pattern.fixType as any,
-          fix: pattern.fix,
-          filesToUpdate: [],
-          codeChanges: "// Check Supabase/RLS configuration",
+          fixType: fixType,
+          codeChanges: pattern.fix, // Use the fix from patterns as codeChanges
           why: "This error matches a recurring pattern in the ERP system.",
           prevention: "Regularly audit RLS policies and query structures.",
           confidence: 0.9,

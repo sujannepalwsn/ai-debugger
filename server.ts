@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import bodyParser from 'body-parser';
 import path from 'path';
+import fs from 'fs-extra';
 import { createServer as createViteServer } from 'vite';
 import { MemoryManager } from './src/services/MemoryManager.ts';
 import { RuleEngine, ErrorPayload } from './src/services/RuleEngine.ts';
@@ -57,8 +58,21 @@ async function startServer() {
 
   // Get Checklist
   app.get('/api/checklist', async (req, res) => {
-    const checklist = await import('./src/memory/checklist.json');
-    res.json(checklist.default);
+    const checklistPath = path.join(process.cwd(), 'src/memory/checklist.json');
+    const checklist = await fs.readJson(checklistPath);
+    res.json(checklist);
+  });
+
+  // Ingest Real Schema from ERP
+  app.post('/api/ingest-schema', async (req, res) => {
+    const { tables, modules } = req.body;
+    try {
+      if (tables) await memoryManager.updateSchemaKnowledge({ tables });
+      if (modules) await memoryManager.updateChecklist(modules);
+      res.json({ status: 'success', message: 'ERP Schema and Modules synced successfully' });
+    } catch (e) {
+      res.status(500).json({ error: 'Failed to ingest schema' });
+    }
   });
 
   // Vite middleware for development
