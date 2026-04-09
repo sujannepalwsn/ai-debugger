@@ -22,7 +22,8 @@ import {
   X,
   Book,
   RefreshCw,
-  Save
+  Save,
+  Star
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
@@ -79,6 +80,7 @@ interface FixHistoryEntry {
   fix: string;
   codeChanges: string;
   timestamp: string;
+  rating?: number;
 }
 
 interface SystemEvent {
@@ -453,6 +455,11 @@ export default function App() {
     } catch (e) {
       console.error('Failed to clear history');
     }
+  };
+
+  const handleRateFix = (index: number, rating: number) => {
+    setHistory(prev => prev.map((item, i) => i === index ? { ...item, rating } : item));
+    toast.success(`Rated fix ${rating} stars`);
   };
 
   const handleDeleteRule = async (index: number) => {
@@ -1240,6 +1247,13 @@ export default function App() {
                         <span className="text-[9px] lg:text-[10px] text-white/30 font-mono">{new Date(item.timestamp).toLocaleString()}</span>
                       </div>
                       <p className="text-xs lg:text-sm text-white/40 truncate">{item.message}</p>
+                      <div className="flex items-center gap-1 mt-2">
+                        {[1, 2, 3, 4, 5].map((star) => (
+                          <button key={star} onClick={() => handleRateFix(idx, star)}>
+                            <Star className={cn("w-4 h-4", (item.rating || 0) >= star ? "text-yellow-400 fill-yellow-400" : "text-white/20")} />
+                          </button>
+                        ))}
+                      </div>
                     </div>
                     <div className="hidden sm:block text-right shrink-0">
                       <span className="px-3 py-1 bg-white/5 rounded-full text-[9px] lg:text-[10px] font-bold uppercase tracking-wider text-white/60">
