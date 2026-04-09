@@ -11,6 +11,7 @@ import { createClient } from '@supabase/supabase-js';
 import { MemoryManager } from './src/services/MemoryManager.ts';
 import { RuleEngine, ErrorPayload } from './src/services/RuleEngine.ts';
 import { GeminiDebugger } from './src/services/GeminiDebugger.ts';
+import { RLSGenerator } from './src/services/RLSGenerator.ts';
 import { Octokit } from 'octokit';
 
 async function startServer() {
@@ -30,7 +31,7 @@ async function startServer() {
   const memoryManager = new MemoryManager();
   const ruleEngine = new RuleEngine(memoryManager);
   const geminiDebugger = new GeminiDebugger(memoryManager);
-  const configPath = path.join(process.cwd(), 'src/memory/server_config.json');
+  const rlsGenerator = new RLSGenerator();
 
   // Supabase Client Initialization (Lazy)
   let supabase: any = null;
@@ -45,23 +46,17 @@ async function startServer() {
     return null;
   };
 
-  // Load server-side config and merge with process.env
-  const loadServerConfig = async () => {
+  app.post('/api/generate-rls', async (req, res) => {
     try {
-      const config = await fs.readJson(configPath);
-      Object.keys(config).forEach(key => {
-        if (config[key]) {
-          process.env[key] = config[key];
-        }
-      });
-      console.log('Server configuration loaded from file.');
+      const files = await rlsGenerator.fetchRepositoryFiles();
+      const schema = await rlsGenerator.fetchSupabaseSchema();
+      const policies = await rlsGenerator.generateRLSPolicies(files, schema);
+      res.json(policies);
     } catch (e) {
-      console.warn('No server-side config file found or failed to load.');
+      console.error(e);
+      res.status(500).json({ error: 'Failed to generate RLS policies' });
     }
-  };
-  await loadServerConfig();
-
-  // Error Queue for Batch Processing
+  });
   interface QueuedError {
     payload: ErrorPayload;
     apiKey?: string;
@@ -219,6 +214,13 @@ async function startServer() {
               fixType: result.fixType.toLowerCase()
             });
           }
+        } else if (result.confidence === 0) {
+          // Confidence 0 usually means an error occurred (like invalid API key)
+          io.emit('analysis_failed', { 
+            message: payload.message, 
+            error: result.rootCause,
+            timestamp: new Date().toISOString() 
+          });
         }
       } catch (err) {
         console.error('Queue Processing Error:', err);
@@ -243,58 +245,7 @@ async function startServer() {
   });
 
   app.post('/api/save-config', async (req, res) => {
-    const { 
-      GEMINI_API_KEY, 
-      GITHUB_TOKEN, 
-      GITHUB_OWNER, 
-      GITHUB_REPO,
-      SUPABASE_URL,
-      SUPABASE_SERVICE_ROLE_KEY,
-      SUPABASE_ERROR_TABLE,
-      AUTO_PR
-    } = req.body;
-    
-    try {
-      const config = await fs.readJson(configPath).catch(() => ({}));
-      
-      if (GEMINI_API_KEY) {
-        config.GEMINI_API_KEY = GEMINI_API_KEY;
-        process.env.GEMINI_API_KEY = GEMINI_API_KEY;
-      }
-      if (GITHUB_TOKEN) {
-        config.GITHUB_TOKEN = GITHUB_TOKEN;
-        process.env.GITHUB_TOKEN = GITHUB_TOKEN;
-      }
-      if (GITHUB_OWNER) {
-        config.GITHUB_OWNER = GITHUB_OWNER;
-        process.env.GITHUB_OWNER = GITHUB_OWNER;
-      }
-      if (GITHUB_REPO) {
-        config.GITHUB_REPO = GITHUB_REPO;
-        process.env.GITHUB_REPO = GITHUB_REPO;
-      }
-      if (SUPABASE_URL) {
-        config.SUPABASE_URL = SUPABASE_URL;
-        process.env.SUPABASE_URL = SUPABASE_URL;
-      }
-      if (SUPABASE_SERVICE_ROLE_KEY) {
-        config.SUPABASE_SERVICE_ROLE_KEY = SUPABASE_SERVICE_ROLE_KEY;
-        process.env.SUPABASE_SERVICE_ROLE_KEY = SUPABASE_SERVICE_ROLE_KEY;
-      }
-      if (SUPABASE_ERROR_TABLE) {
-        config.SUPABASE_ERROR_TABLE = SUPABASE_ERROR_TABLE;
-        process.env.SUPABASE_ERROR_TABLE = SUPABASE_ERROR_TABLE;
-      }
-      if (AUTO_PR !== undefined) {
-        config.AUTO_PR = String(AUTO_PR);
-        process.env.AUTO_PR = String(AUTO_PR);
-      }
-      
-      await fs.writeJson(configPath, config, { spaces: 2 });
-      res.json({ status: 'success', message: 'Configuration saved to server permanently' });
-    } catch (e) {
-      res.status(500).json({ error: 'Failed to save configuration to server' });
-    }
+    res.status(403).json({ error: 'Configuration must be managed via environment variables in the AI Studio settings.' });
   });
 
   // API Endpoint to receive ERP error logs (Non-blocking)

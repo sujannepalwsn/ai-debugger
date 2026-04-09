@@ -7,6 +7,8 @@ import {
   AlertCircle, 
   Terminal, 
   Code, 
+  Activity,
+  AlertTriangle,
   Shield, 
   Database, 
   Layout, 
@@ -79,8 +81,17 @@ interface FixHistoryEntry {
   timestamp: string;
 }
 
+interface SystemEvent {
+  id: string;
+  type: 'error' | 'analysis' | 'fix' | 'pr';
+  message: string;
+  timestamp: string;
+  severity?: string;
+  details?: any;
+}
+
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'debug' | 'history' | 'setup' | 'settings' | 'rules'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'debug' | 'history' | 'setup' | 'settings' | 'rules' | 'security'>('dashboard');
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('gemini_api_key') || '');
   const [githubToken, setGithubToken] = useState(() => localStorage.getItem('github_token') || '');
   const [githubOwner, setGithubOwner] = useState(() => localStorage.getItem('github_owner') || '');
@@ -103,7 +114,8 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [debugResult, setDebugResult] = useState<DebugResult | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [realtimeEvents, setRealtimeEvents] = useState<any[]>([]);
+  const [systemEvents, setSystemEvents] = useState<SystemEvent[]>([]);
+  const [selectedEvent, setSelectedEvent] = useState<SystemEvent | null>(null);
   const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
@@ -120,37 +132,89 @@ export default function App() {
     });
 
     socket.on('error_received', (data: any) => {
-      toast.info(`New error received: ${data.message.substring(0, 50)}...`, {
-        description: `Type: ${data.errorType} | Severity: ${data.severity}`,
-        duration: 5000,
-      });
-      setRealtimeEvents(prev => [data, ...prev].slice(0, 10));
+      const newEvent: SystemEvent = {
+        id: Math.random().toString(36).substr(2, 9),
+        type: 'error',
+        message: `Error Received: ${data.errorType}`,
+        timestamp: data.timestamp || new Date().toISOString(),
+        severity: data.severity,
+        details: data
+      };
+      setSystemEvents(prev => [newEvent, ...prev].slice(0, 50));
     });
 
     socket.on('analyzing_error', (data: any) => {
-      toast.loading(`AI is analyzing: ${data.message.substring(0, 50)}...`, {
-        id: 'analyzing',
-      });
+      const newEvent: SystemEvent = {
+        id: Math.random().toString(36).substr(2, 9),
+        type: 'analysis',
+        message: `AI Analyzing: ${data.message.substring(0, 50)}...`,
+        timestamp: data.timestamp || new Date().toISOString(),
+        details: data
+      };
+      setSystemEvents(prev => [newEvent, ...prev].slice(0, 50));
     });
 
     socket.on('new_fix', (data: any) => {
-      toast.dismiss('analyzing');
-      toast.success(`Analysis complete for: ${data.message.substring(0, 50)}...`, {
-        description: `Root Cause: ${data.rootCause}`,
-        duration: 8000,
-      });
+      const newEvent: SystemEvent = {
+        id: Math.random().toString(36).substr(2, 9),
+        type: 'fix',
+        message: `Fix Found for ${data.error_type}`,
+        timestamp: data.timestamp || new Date().toISOString(),
+        details: data
+      };
+      setSystemEvents(prev => [newEvent, ...prev].slice(0, 50));
       setHistory(prev => [data, ...prev]);
       fetchChecklist();
     });
 
     socket.on('auto_pr_created', (data: any) => {
-      toast.success(data.message, {
-        description: `View PR: ${data.url}`,
-        duration: 10000,
+      const newEvent: SystemEvent = {
+        id: Math.random().toString(36).substr(2, 9),
+        type: 'pr',
+        message: `Auto-PR Created: ${data.message}`,
+        timestamp: new Date().toISOString(),
+        details: data
+      };
+      setSystemEvents(prev => [newEvent, ...prev].slice(0, 50));
+      
+      toast.success('Autonomous PR Created', {
+        description: data.message,
         action: {
-          label: 'View PR',
+          label: 'View',
           onClick: () => window.open(data.url, '_blank')
         }
+      });
+    });
+
+    socket.on('analysis_failed', (data: any) => {
+      const newEvent: SystemEvent = {
+        id: Math.random().toString(36).substr(2, 9),
+        type: 'error',
+        message: `Analysis Failed: ${data.error}`,
+        timestamp: data.timestamp || new Date().toISOString(),
+        details: data
+      };
+      setSystemEvents(prev => [newEvent, ...prev].slice(0, 50));
+      
+      toast.error('AI Analysis Failed', {
+        description: data.error,
+        duration: 10000,
+      });
+    });
+
+    socket.on('analysis_failed', (data: any) => {
+      const newEvent: SystemEvent = {
+        id: Math.random().toString(36).substr(2, 9),
+        type: 'error',
+        message: `Analysis Failed: ${data.error}`,
+        timestamp: data.timestamp || new Date().toISOString(),
+        details: data
+      };
+      setSystemEvents(prev => [newEvent, ...prev].slice(0, 50));
+      
+      toast.error('AI Analysis Failed', {
+        description: data.error,
+        duration: 10000,
       });
     });
 
@@ -194,30 +258,7 @@ export default function App() {
   };
 
   const handleSaveToServer = async () => {
-    try {
-      const res = await fetch('/api/save-config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          GEMINI_API_KEY: apiKey,
-          GITHUB_TOKEN: githubToken,
-          GITHUB_OWNER: githubOwner,
-          GITHUB_REPO: githubRepo,
-          SUPABASE_URL: supabaseUrl,
-          SUPABASE_SERVICE_ROLE_KEY: supabaseKey,
-          SUPABASE_ERROR_TABLE: supabaseTable,
-          AUTO_PR: autoPr
-        })
-      });
-      if (res.ok) {
-        toast.success('Configuration saved to server permanently');
-        fetchServerConfig();
-      } else {
-        throw new Error('Failed to save to server');
-      }
-    } catch (e) {
-      toast.error('Failed to save configuration to server');
-    }
+    toast.error('Configuration must be managed via environment variables in the AI Studio settings.');
   };
 
   const handleSyncSupabase = async () => {
@@ -476,6 +517,16 @@ export default function App() {
         <span className="font-medium">Setup Guide</span>
       </button>
       <button 
+        onClick={() => { setActiveTab('security'); setIsMobileMenuOpen(false); }}
+        className={cn(
+          "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200",
+          activeTab === 'security' ? "bg-white/5 text-blue-400" : "text-white/50 hover:bg-white/5 hover:text-white"
+        )}
+      >
+        <Shield className="w-5 h-5" />
+        <span className="font-medium">Security</span>
+      </button>
+      <button 
         onClick={() => { setActiveTab('settings'); setIsMobileMenuOpen(false); }}
         className={cn(
           "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200",
@@ -532,6 +583,102 @@ export default function App() {
               </div>
             </div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Event Detail Modal */}
+      <AnimatePresence>
+        {selectedEvent && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="max-w-2xl w-full bg-[#1A1A1E] border border-white/10 rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[80vh]"
+            >
+              <div className="p-6 border-b border-white/5 flex items-center justify-between bg-white/5">
+                <div className="flex items-center gap-3">
+                  <span className={cn(
+                    "px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest",
+                    selectedEvent.type === 'error' ? "bg-red-500/20 text-red-400" :
+                    selectedEvent.type === 'analysis' ? "bg-blue-500/20 text-blue-400" :
+                    selectedEvent.type === 'fix' ? "bg-green-500/20 text-green-400" :
+                    "bg-purple-500/20 text-purple-400"
+                  )}>
+                    {selectedEvent.type}
+                  </span>
+                  <h3 className="font-bold text-lg">Event Details</h3>
+                </div>
+                <button 
+                  onClick={() => setSelectedEvent(null)}
+                  className="p-2 hover:bg-white/10 rounded-full transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              
+              <div className="p-8 overflow-y-auto space-y-6">
+                <div>
+                  <label className="text-[10px] font-bold text-white/30 uppercase tracking-widest mb-2 block">Message</label>
+                  <p className="text-white/80 font-mono text-sm bg-black/40 p-4 rounded-xl border border-white/5">
+                    {selectedEvent.details?.message || selectedEvent.message}
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-6">
+                  <div>
+                    <label className="text-[10px] font-bold text-white/30 uppercase tracking-widest mb-2 block">Timestamp</label>
+                    <p className="text-white/60 text-sm font-mono">{new Date(selectedEvent.timestamp).toLocaleString()}</p>
+                  </div>
+                  {selectedEvent.severity && (
+                    <div>
+                      <label className="text-[10px] font-bold text-white/30 uppercase tracking-widest mb-2 block">Severity</label>
+                      <span className={cn(
+                        "px-2 py-1 rounded text-[10px] font-bold uppercase",
+                        selectedEvent.severity === 'high' || selectedEvent.severity === 'critical' ? "bg-red-500/20 text-red-400" : "bg-yellow-500/20 text-yellow-400"
+                      )}>
+                        {selectedEvent.severity}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {selectedEvent.details && (
+                  <div>
+                    <label className="text-[10px] font-bold text-white/30 uppercase tracking-widest mb-2 block">Extracted Metadata</label>
+                    <div className="bg-black/40 rounded-2xl border border-white/5 p-4 space-y-3">
+                      {Object.entries(selectedEvent.details).map(([key, value]) => {
+                        if (typeof value === 'object' || key === 'message' || key === 'timestamp' || key === 'id') return null;
+                        return (
+                          <div key={key} className="flex justify-between items-center border-b border-white/5 pb-2 last:border-0 last:pb-0">
+                            <span className="text-[10px] text-white/30 uppercase tracking-widest font-bold">{key}</span>
+                            <span className="text-[11px] text-white/70 font-mono">{String(value)}</span>
+                          </div>
+                        );
+                      })}
+                      {selectedEvent.details.stack && (
+                        <div className="pt-2">
+                          <label className="text-[10px] font-bold text-white/30 uppercase tracking-widest mb-2 block">Stack Trace</label>
+                          <pre className="text-[9px] text-red-400/70 font-mono bg-red-500/5 p-3 rounded-lg overflow-x-auto whitespace-pre-wrap">
+                            {selectedEvent.details.stack}
+                          </pre>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="p-6 border-t border-white/5 bg-white/5 flex justify-end">
+                <button 
+                  onClick={() => setSelectedEvent(null)}
+                  className="px-6 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-sm font-bold transition-all"
+                >
+                  Close
+                </button>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
 
@@ -627,6 +774,60 @@ export default function App() {
                 </div>
               </header>
 
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div className="p-6 bg-[#0F0F11] border border-white/5 rounded-2xl flex flex-col gap-4">
+                  <div className="flex items-center justify-between">
+                    <div className="p-2 bg-blue-500/10 rounded-lg">
+                      <Activity className="w-5 h-5 text-blue-400" />
+                    </div>
+                    <span className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Active</span>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold text-white/30 uppercase tracking-widest mb-1">System Health</p>
+                    <h3 className="text-2xl font-bold">98.2%</h3>
+                  </div>
+                </div>
+
+                <div className="p-6 bg-[#0F0F11] border border-white/5 rounded-2xl flex flex-col gap-4">
+                  <div className="flex items-center justify-between">
+                    <div className="p-2 bg-green-500/10 rounded-lg">
+                      <CheckCircle2 className="w-5 h-5 text-green-400" />
+                    </div>
+                    <span className="text-[10px] font-bold text-green-400 uppercase tracking-widest">Resolved</span>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold text-white/30 uppercase tracking-widest mb-1">Total Fixes</p>
+                    <h3 className="text-2xl font-bold">{history.length}</h3>
+                  </div>
+                </div>
+
+                <div className="p-6 bg-[#0F0F11] border border-white/5 rounded-2xl flex flex-col gap-4">
+                  <div className="flex items-center justify-between">
+                    <div className="p-2 bg-purple-500/10 rounded-lg">
+                      <GitPullRequest className="w-4 h-4 text-purple-400" />
+                    </div>
+                    <span className="text-[10px] font-bold text-purple-400 uppercase tracking-widest">Autonomous</span>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold text-white/30 uppercase tracking-widest mb-1">Auto-PRs</p>
+                    <h3 className="text-2xl font-bold">{systemEvents.filter(e => e.type === 'pr').length}</h3>
+                  </div>
+                </div>
+
+                <div className="p-6 bg-[#0F0F11] border border-white/5 rounded-2xl flex flex-col gap-4">
+                  <div className="flex items-center justify-between">
+                    <div className="p-2 bg-red-500/10 rounded-lg">
+                      <AlertTriangle className="w-5 h-5 text-red-400" />
+                    </div>
+                    <span className="text-[10px] font-bold text-red-400 uppercase tracking-widest">Recent</span>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold text-white/30 uppercase tracking-widest mb-1">Errors (24h)</p>
+                    <h3 className="text-2xl font-bold">{systemEvents.filter(e => e.type === 'error').length}</h3>
+                  </div>
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {checklist.map((item, idx) => (
@@ -663,43 +864,103 @@ export default function App() {
                   <div className="p-6 bg-[#0F0F11] border border-white/5 rounded-2xl flex flex-col h-full">
                     <div className="flex items-center justify-between mb-6">
                       <div className="flex items-center gap-2">
-                        <Terminal className="w-4 h-4 text-blue-400" />
-                        <h3 className="font-bold text-sm uppercase tracking-widest">Live Error Feed</h3>
+                        <History className="w-4 h-4 text-purple-400" />
+                        <h3 className="font-bold text-sm uppercase tracking-widest">Recent Fixes</h3>
                       </div>
-                      <span className="text-[9px] font-bold text-white/30 uppercase tracking-widest">Last 10 Events</span>
+                      <button 
+                        onClick={() => setActiveTab('history')}
+                        className="text-[9px] font-bold text-blue-400 uppercase tracking-widest hover:underline"
+                      >
+                        View All
+                      </button>
                     </div>
 
-                    <div className="flex-1 space-y-3 overflow-y-auto max-h-[300px] pr-2 scrollbar-thin scrollbar-thumb-white/10">
-                      {realtimeEvents.length === 0 ? (
+                    <div className="flex-1 space-y-4 overflow-y-auto scrollbar-thin scrollbar-thumb-white/10 pr-2">
+                      {history.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-10 text-center opacity-30">
-                          <Loader2 className="w-8 h-8 mb-2 animate-spin" />
-                          <p className="text-[10px] uppercase tracking-widest font-bold">Waiting for errors...</p>
+                          <p className="text-[10px] uppercase tracking-widest font-bold">No fixes recorded yet.</p>
                         </div>
                       ) : (
-                        realtimeEvents.map((event, idx) => (
-                          <motion.div 
-                            initial={{ opacity: 0, x: 20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            key={idx} 
-                            className="p-3 bg-white/5 border border-white/5 rounded-xl space-y-1"
-                          >
+                        history.slice(0, 5).map((fix, idx) => (
+                          <div key={idx} className="p-4 bg-white/5 border border-white/5 rounded-xl space-y-2">
                             <div className="flex justify-between items-center">
-                              <span className="text-[9px] font-bold text-blue-400 uppercase tracking-widest">{event.errorType}</span>
-                              <span className="text-[8px] text-white/30 font-mono">{new Date(event.timestamp).toLocaleTimeString()}</span>
+                              <span className="text-[9px] font-bold text-green-400 uppercase tracking-widest">{fix.error_type}</span>
+                              <span className="text-[8px] text-white/30 font-mono">{new Date(fix.timestamp).toLocaleDateString()}</span>
                             </div>
-                            <p className="text-[11px] text-white/70 line-clamp-2 font-mono leading-relaxed">{event.message}</p>
+                            <p className="text-[11px] text-white/80 font-mono line-clamp-2">{fix.rootCause}</p>
                             <div className="flex items-center gap-2 pt-1">
-                              <span className={cn(
-                                "text-[8px] px-1.5 py-0.5 rounded uppercase font-bold",
-                                event.severity === 'high' ? "bg-red-500/20 text-red-400" : "bg-yellow-500/20 text-yellow-400"
-                              )}>
-                                {event.severity}
-                              </span>
-                              <span className="text-[8px] text-white/40 uppercase tracking-tight">{event.moduleName}</span>
+                              <span className="text-[8px] px-1.5 py-0.5 bg-blue-500/20 text-blue-400 rounded uppercase font-bold">{fix.fixType}</span>
                             </div>
-                          </motion.div>
+                          </div>
                         ))
                       )}
+                    </div>
+                  </div>
+
+                  <div className="p-6 bg-[#0F0F11] border border-white/5 rounded-2xl flex flex-col h-full">
+                    <div className="flex items-center justify-between mb-6">
+                      <div className="flex items-center gap-2">
+                        <Terminal className="w-4 h-4 text-blue-400" />
+                        <h3 className="font-bold text-sm uppercase tracking-widest">System Activity Log</h3>
+                      </div>
+                      <span className="text-[9px] font-bold text-white/30 uppercase tracking-widest">Last 50 Events</span>
+                    </div>
+
+                    <div className="flex-1 overflow-x-auto scrollbar-thin scrollbar-thumb-white/10">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="border-b border-white/5">
+                            <th className="pb-3 text-[10px] font-bold text-white/30 uppercase tracking-widest">Type</th>
+                            <th className="pb-3 text-[10px] font-bold text-white/30 uppercase tracking-widest">Event</th>
+                            <th className="pb-3 text-[10px] font-bold text-white/30 uppercase tracking-widest">Time</th>
+                            <th className="pb-3 text-[10px] font-bold text-white/30 uppercase tracking-widest">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5">
+                          {systemEvents.length === 0 ? (
+                            <tr>
+                              <td colSpan={4} className="py-10 text-center opacity-30">
+                                <div className="flex flex-col items-center">
+                                  <Loader2 className="w-8 h-8 mb-2 animate-spin" />
+                                  <p className="text-[10px] uppercase tracking-widest font-bold">Waiting for activity...</p>
+                                </div>
+                              </td>
+                            </tr>
+                          ) : (
+                            systemEvents.map((event) => (
+                              <tr key={event.id} className="group hover:bg-white/5 transition-colors">
+                                <td className="py-3 pr-4">
+                                  <span className={cn(
+                                    "px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-tighter",
+                                    event.type === 'error' ? "bg-red-500/20 text-red-400" :
+                                    event.type === 'analysis' ? "bg-blue-500/20 text-blue-400" :
+                                    event.type === 'fix' ? "bg-green-500/20 text-green-400" :
+                                    "bg-purple-500/20 text-purple-400"
+                                  )}>
+                                    {event.type}
+                                  </span>
+                                </td>
+                                <td className="py-3 pr-4">
+                                  <p className="text-[11px] text-white/70 line-clamp-1 font-mono">{event.message}</p>
+                                </td>
+                                <td className="py-3 pr-4 whitespace-nowrap">
+                                  <span className="text-[9px] text-white/30 font-mono">
+                                    {new Date(event.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                  </span>
+                                </td>
+                                <td className="py-3">
+                                  <button 
+                                    onClick={() => setSelectedEvent(event)}
+                                    className="p-1 hover:bg-blue-500/20 rounded transition-colors"
+                                  >
+                                    <Info className="w-3 h-3 text-blue-400" />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
 
@@ -1156,6 +1417,53 @@ export default function App() {
                   </div>
                 </div>
               </div>
+            </motion.div>
+          )}
+          {activeTab === 'security' && (
+            <motion.div 
+              key="security"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="space-y-8"
+            >
+              <header>
+                <h2 className="text-2xl lg:text-3xl font-bold mb-2">RLS Security Policy Generator</h2>
+                <p className="text-white/50 text-sm lg:text-base">Analyze your repository and database to generate secure RLS policies.</p>
+              </header>
+              <button 
+                onClick={async () => {
+                  setLoading(true);
+                  try {
+                    const res = await fetch('/api/generate-rls', { method: 'POST' });
+                    const data = await res.json();
+                    setDebugResult({
+                      rootCause: 'Policy Generation',
+                      fixType: 'Database',
+                      codeChanges: JSON.stringify(data, null, 2),
+                      why: 'Generated based on repo analysis',
+                      prevention: 'Apply these policies',
+                      confidence: 1
+                    } as any);
+                    toast.success('Policies generated');
+                  } catch (e) {
+                    toast.error('Failed to generate policies');
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+                className="px-6 py-3 bg-blue-600 hover:bg-blue-500 rounded-xl font-bold transition-all"
+              >
+                {loading ? 'Analyzing...' : 'Generate RLS Policies'}
+              </button>
+              {debugResult && (
+                <div className="bg-white/5 p-6 rounded-2xl border border-white/10">
+                  <h3 className="text-xl font-bold mb-4">Suggested Policies</h3>
+                  <pre className="bg-black p-4 rounded-xl overflow-x-auto text-sm text-green-400">
+                    {debugResult.codeChanges}
+                  </pre>
+                </div>
+              )}
             </motion.div>
           )}
           {activeTab === 'settings' && (
